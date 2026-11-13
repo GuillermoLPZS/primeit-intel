@@ -111,11 +111,12 @@ details.fuentes summary{cursor:pointer;color:var(--ink-soft);font-size:14px}
     <p class="lead">Pregunta por cualquier cuenta, interlocutor o reunión del equipo Small Business.</p>
     <form id="form-login">
       <label class="field"><span>Correo corporativo</span><input id="email" type="email" autocomplete="email" required></label>
-      <label class="field"><span>Contraseña</span><input id="password" type="password" autocomplete="current-password" minlength="8" required></label>
+      <label class="field hidden" id="campo-codigo"><span>Código de invitación</span><input id="codigo" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false"></label>
+      <label class="field"><span id="label-password">Contraseña</span><input id="password" type="password" autocomplete="current-password" minlength="8" required></label>
       <button class="btn btn-primary" id="btn-login" type="submit">Entrar</button>
     </form>
     <p class="msg" id="msg-login" role="status"></p>
-    <div class="switch"><button class="btn-link" id="btn-modo" type="button">¿Primera vez? Crea tu contraseña</button></div>
+    <div class="switch"><button class="btn-link" id="btn-modo" type="button">¿Primera vez? Activa tu cuenta con tu código</button></div>
   </div>
 </section>
 
@@ -181,8 +182,11 @@ sb.auth.onAuthStateChange(() => pintarSesion());
 
 $("btn-modo").addEventListener("click", () => {
   modoRegistro = !modoRegistro;
-  $("btn-login").textContent = modoRegistro ? "Crear cuenta" : "Entrar";
-  $("btn-modo").textContent = modoRegistro ? "Ya tengo cuenta: entrar" : "¿Primera vez? Crea tu contraseña";
+  $("campo-codigo").classList.toggle("hidden", !modoRegistro);
+  $("codigo").required = modoRegistro;
+  $("label-password").textContent = modoRegistro ? "Elige tu contraseña (mínimo 8 caracteres)" : "Contraseña";
+  $("btn-login").textContent = modoRegistro ? "Activar cuenta y entrar" : "Entrar";
+  $("btn-modo").textContent = modoRegistro ? "Ya tengo cuenta: entrar" : "¿Primera vez? Activa tu cuenta con tu código";
   $("password").autocomplete = modoRegistro ? "new-password" : "current-password";
   setMsg("");
 });
@@ -196,20 +200,22 @@ $("form-login").addEventListener("submit", async (e) => {
   $("btn-login").disabled = true;
   try{
     if (modoRegistro){
-      const { error } = await sb.auth.signUp({ email, password, options:{ emailRedirectTo: location.href.split("#")[0] } });
-      if (error) throw error;
-      setMsg("Cuenta creada. Confirma tu correo con el enlace que te hemos enviado y vuelve aquí para entrar.", "ok");
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      setMsg("");
+      setMsg("Activando tu cuenta…", "ok");
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/alta`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json", "apikey": SUPABASE_ANON, "Authorization": `Bearer ${SUPABASE_ANON}` },
+        body: JSON.stringify({ email, codigo: $("codigo").value, password })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
     }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    setMsg("");
   } catch(err){
     const t = (err.message || "").toLowerCase();
-    if (t.includes("invalid login")) setMsg("Correo o contraseña incorrectos.", "error");
-    else if (t.includes("email not confirmed")) setMsg("Falta confirmar el correo: abre el enlace que te enviamos al crear la cuenta.", "error");
-    else if (t.includes("already registered")) setMsg("Ese correo ya tiene cuenta. Entra con tu contraseña.", "error");
-    else setMsg("No se pudo completar: " + err.message, "error");
+    if (t.includes("invalid login")) setMsg("Correo o contraseña incorrectos. Si es tu primera vez, activa tu cuenta con tu código.", "error");
+    else setMsg(err.message, "error");
   } finally { $("btn-login").disabled = false; }
 });
 
